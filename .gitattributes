@@ -1,2 +1,12 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Force LF line endings everywhere — match what's stored in the repo so
+# Windows clients with `core.autocrlf=true` don't show every file as a
+# pending line-ending change.
+* text=auto eol=lf
+
+# Binary files we don't want Git to touch.
+*.dll binary
+*.exe binary
+*.lib binary
+*.png binary
+*.jpg binary
+*.ico binary
