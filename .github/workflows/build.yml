@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -A Win32          # Win32 is mandatory — WoW.exe is x86
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload artifact
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuctionQueryThrottle-${{ github.sha }}
+          path: build/Release/AuctionQueryThrottle.dll
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Release/AuctionQueryThrottle.dll
+          generate_release_notes: true
