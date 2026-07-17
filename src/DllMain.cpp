@@ -19,13 +19,8 @@ int __stdcall AhListResult_h(void *opcode, void *packet) {
     // QueryAuctionItems armed to clock()+5000 on send — before the handler
     // fills the list and fires AUCTION_ITEM_LIST_UPDATE, so a response-driven
     // scanner sees CanSendAuctionQuery() == true in its event handler and can
-    // request the next page immediately.
-    //
-    // This runs once per response regardless of item-cache state, so pagination
-    // is uniform across every category. (An earlier version hooked the item-
-    // cache resolution callback 0x004CF290 instead; that only fires for uncached
-    // items, so fully-cached pages never cleared the floor and sat at the full
-    // 5 s — the cause of per-category speed variance. See Offsets.h.)
+    // request the next page immediately. This runs once per response regardless
+    // of item-cache state, so pagination is uniform across every category.
     //
     // Self-pacing needs no interval constant: each send re-arms the floor to
     // clock()+5000, so no second query can leave until either its response
