@@ -1,10 +1,9 @@
 # AuctionQueryThrottle
 
-A tiny DLL for World of Warcraft 1.12.1 that makes the client-side auction-house
-**browse-query throttle response-driven**. Instead of forcing the stock fixed
-**5-second** wait between auction searches, the next query is allowed the moment
-the server's result arrives — so paging through the AH runs at round-trip speed
-(a fraction of a second on a healthy connection).
+A tiny DLL for World of Warcraft 1.12.1 that makes auction-house searches fast.
+Vanilla forces a fixed **5-second** wait between AH searches; this lets the next
+one fire the moment the server answers — so paging through the auction house runs
+at round-trip speed (a fraction of a second on a healthy connection).
 
 It does exactly one thing: it never blocks a query longer than the server takes
 to answer the previous one. It works with the **default auction UI** and with
