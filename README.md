@@ -9,6 +9,8 @@ It does exactly one thing: it never blocks a query longer than the server takes
 to answer the previous one. It works with the **default auction UI** and with
 any scanning addon; **no companion addon is required**.
 
+![Auctionator scanning the auction house](AuctionatorScan.png)
+
 ## Installation
 
 Download the prebuilt `AuctionQueryThrottle.dll` from the
