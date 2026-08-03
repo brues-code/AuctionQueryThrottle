@@ -1,3 +1,4 @@
 [submodule "external/minhook"]
 	path = external/minhook
-	url = https://github.com/TsudaKageyu/minhook.git
+	url = https://github.com/m417z/minhook.git
+	branch = multihook
