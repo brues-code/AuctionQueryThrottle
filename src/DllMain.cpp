@@ -32,31 +32,105 @@ int __stdcall AhListResult_h(void *opcode, void *packet) {
     return o_AhListResult(opcode, packet);
 }
 
+// ---------------------------------------------------------------------------
+// Hook install — kept OFF the Windows loader lock.
+//
+// MH_EnableHook freezes all process threads (CreateToolhelp32Snapshot +
+// SuspendThread/GetThreadContext each), which MinHook documents as unsafe to
+// run from DllMain under the loader lock. So DllMain installs nothing; the
+// install runs later, on a thread that does NOT hold the lock, via one of two
+// triggers that both funnel through the latched EnsureInitialized():
+//   * VanillaFixes' `Load` export, called on the game's main thread after
+//     injection (the sanctioned VF extension point), or
+//   * a fallback worker thread we spawn from DllMain, ONLY when VanillaFixes
+//     is not the loader (no VfPatcher.dll in the process), for injectors that
+//     never call `Load`.
+//
+// The worker MUST stand down under VanillaFixes: VF injects every dlls.txt
+// DLL sequentially via remote threads, and a worker spawned from our DllMain
+// would run its thread-freezing install while VF is still injecting the NEXT
+// dlls.txt DLL, racing that DLL's DllMain (the failure mode ClassicAPI hit
+// with SuperWoWhook). `Load` has no such race: VfPatcher calls it on the
+// game's main thread after every DllMain in the injection chain completed,
+// serialized in dlls.txt order.
+//
+// The target itself needs no waiting either way: the handler is static code
+// present from process start, and the throttle word is plain BSS. It's
+// reached via the network dispatch table, but MinHook patches the function
+// prologue itself, so the dispatched call still lands in our detour.
+// ---------------------------------------------------------------------------
+
+volatile LONG g_initClaimed = 0;    // 0 until a thread takes the installer role
+volatile LONG g_initDone = 0;       // 0 until the install has finished
+volatile LONG g_initResult = 1;     // 0 = success, 1 = failure (until proven)
+volatile LONG g_mhInitialized = 0;  // MH_Initialize succeeded (gates detach teardown)
+
+bool InstallHook() {
+    if (MH_Initialize() != MH_OK)
+        return false;
+    InterlockedExchange(&g_mhInitialized, 1);
+
+    auto *target = reinterpret_cast<LPVOID>(Offsets::FUN_AH_LIST_RESULT_HANDLER);
+    if (MH_CreateHook(target,
+                      reinterpret_cast<LPVOID>(&AhListResult_h),
+                      reinterpret_cast<LPVOID *>(&o_AhListResult)) != MH_OK)
+        return false;
+    return MH_EnableHook(target) == MH_OK;
+}
+
+// Runs InstallHook exactly once. Returns 0 on success, 1 on failure. If a
+// second caller arrives while the install is in flight, it blocks briefly so
+// both callers observe the real result.
+DWORD EnsureInitialized() {
+    if (InterlockedCompareExchange(&g_initClaimed, 1, 0) == 0) {
+        g_initResult = InstallHook() ? 0 : 1;
+        InterlockedExchange(&g_initDone, 1);
+    } else {
+        while (InterlockedCompareExchange(&g_initDone, 0, 0) == 0)
+            Sleep(1);
+    }
+    return static_cast<DWORD>(g_initResult);
+}
+
+DWORD WINAPI InitWorker(LPVOID) {
+    EnsureInitialized();
+    return 0;
+}
+
 } // namespace
+
+// VanillaFixes calls this on the game's MAIN thread after injection
+// (InitAdditionalDLLs -> GetProcAddress(module, "Load")), outside the loader
+// lock and with no timeout — the sanctioned VF extension point. Returns 0 on
+// success; VF reports any non-zero result to the user. Exported undecorated
+// as "Load" via src/AuctionQueryThrottle.def.
+extern "C" DWORD Load() { return EnsureInitialized(); }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
 
-        if (MH_Initialize() != MH_OK)
-            return FALSE;
-
-        // The handler is cold (fires only on an AH list response) and is static
-        // code present from process start; the throttle word is plain BSS. So a
-        // MinHook co-hook installed at DLL_PROCESS_ATTACH needs no
-        // wait-for-engine-init. It's reached via the network dispatch table, but
-        // MinHook patches the function prologue itself, so the dispatched call
-        // still lands in our detour.
-        auto *target =
-            reinterpret_cast<LPVOID>(Offsets::FUN_AH_LIST_RESULT_HANDLER);
-        if (MH_CreateHook(target,
-                          reinterpret_cast<LPVOID>(&AhListResult_h),
-                          reinterpret_cast<LPVOID *>(&o_AhListResult)) != MH_OK)
-            return FALSE;
-        if (MH_EnableHook(target) != MH_OK)
-            return FALSE;
+        // Install nothing here (loader lock — see the block comment above).
+        //
+        // Under VanillaFixes, `Load` is the ONLY install trigger. VfPatcher.dll
+        // is injected before any dlls.txt DLL, so its presence identifies VF as
+        // the loader; and the `Load` mechanism shipped in the same VF release
+        // (v1.4) as dlls.txt support itself, so any VF that loaded us will call
+        // it. Spawning the worker here would race the DllMains of the dlls.txt
+        // DLLs VF injects after us (see the block comment above).
+        if (GetModuleHandleW(L"VfPatcher.dll") == nullptr) {
+            // Any other injector: no `Load` caller exists, so install from a
+            // worker off the lock. The new thread cannot run its body until
+            // DllMain returns and the loader lock releases, and we never wait
+            // on it. DisableThreadLibraryCalls suppressed its THREAD_ATTACH.
+            HANDLE worker = CreateThread(nullptr, 0, InitWorker, nullptr, 0, nullptr);
+            if (worker != nullptr)
+                CloseHandle(worker);
+        }
     } else if (reason == DLL_PROCESS_DETACH) {
-        MH_Uninitialize();
+        // Clean /quit path — only tear down if we actually initialized.
+        if (g_mhInitialized)
+            MH_Uninitialize();
     }
     return TRUE;
 }

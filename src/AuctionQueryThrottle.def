@@ -1,0 +1,9 @@
+; Exports for AuctionQueryThrottle.dll.
+;
+; `Load` is VanillaFixes' post-injection entry point: after the launcher
+; injects each dlls.txt DLL, the VanillaFixes runtime calls the DLL's `Load`
+; export on the game's MAIN thread (GetProcAddress(module, "Load")), outside
+; the loader lock and with no timeout. Listing it here exports it undecorated
+; as "Load" so GetProcAddress finds it regardless of calling convention.
+EXPORTS
+    Load

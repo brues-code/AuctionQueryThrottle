@@ -23,9 +23,13 @@ set(CMAKE_CXX_FLAGS_RELEASE "/MT /O2 /Ob2 /DNDEBUG")
 
 add_subdirectory(external/minhook)
 
+# The .def exports `Load` (VanillaFixes' post-injection entry point)
+# undecorated so its GetProcAddress(module, "Load") resolves; CMake passes a
+# .def listed in the sources straight to the MSVC linker.
 add_library(${PROJECT_NAME} SHARED
     src/DllMain.cpp
-    src/Offsets.h)
+    src/Offsets.h
+    src/AuctionQueryThrottle.def)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
