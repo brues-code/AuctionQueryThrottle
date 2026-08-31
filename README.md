@@ -11,6 +11,14 @@ any scanning addon; **no companion addon is required**.
 
 ![Auctionator scanning the auction house](AuctionatorScan.png)
 
+## Compatibility
+
+This removes the **client-side** floor only. Servers that enforce their own
+auction-query throttle **server-side** — such as **Kronos**, **Capybara**, and
+**Ravencraft** — rate-limit regardless of what the client sends, so the DLL has
+no effect there. It helps on servers that leave the pacing to the client and
+clear their in-flight lock on send (e.g. **Octo**).
+
 ## Installation
 
 Download the prebuilt `AuctionQueryThrottle.dll` from the
