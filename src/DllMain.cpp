@@ -7,20 +7,26 @@
 
 namespace {
 
-// SMSG_AUCTION_LIST_RESULT handler: int __stdcall(int opcode, void *packet),
-// RET 0x8. Runs once for every browse-list response the server sends.
-using AhListResult_t = int(__stdcall *)(void *opcode, void *packet);
+// SMSG_AUCTION_LIST_RESULT handler, in the network dispatch's handler
+// convention: context in ECX, opcode in EDX, then time and message on the
+// stack (RET 0x8). Runs once for every browse-list response the server sends.
+using AhListResult_t = uint32_t(__fastcall *)(void *param, uint32_t opcode,
+                                              uint32_t time, void *msg);
 
 AhListResult_t o_AhListResult = nullptr;
 
-int __stdcall AhListResult_h(void *opcode, void *packet) {
+uint32_t __fastcall AhListResult_h(void *param, uint32_t opcode, uint32_t time,
+                                   void *msg) {
     // A browse-list result packet arrived, so the query the client's throttle
     // was holding the floor for is done. Clear that floor — the word
     // QueryAuctionItems armed to clock()+5000 on send — before the handler
-    // fills the list and fires AUCTION_ITEM_LIST_UPDATE, so a response-driven
-    // scanner sees CanSendAuctionQuery() == true in its event handler and can
-    // request the next page immediately. This runs once per response regardless
-    // of item-cache state, so pagination is uniform across every category.
+    // fills the list. On a fully-cached page the handler fires
+    // AUCTION_ITEM_LIST_UPDATE synchronously, so a response-driven scanner sees
+    // CanSendAuctionQuery() == true in its event handler and can request the
+    // next page immediately; otherwise the event fires later, from the last
+    // item-cache arrival (0x004CCA10), with the gate already open. This runs
+    // once per response regardless of item-cache state, so pagination is
+    // uniform across every category.
     //
     // Self-pacing needs no interval constant: each send re-arms the floor to
     // clock()+5000, so no second query can leave until either its response
@@ -29,7 +35,7 @@ int __stdcall AhListResult_h(void *opcode, void *packet) {
     // therefore never violated.
     *reinterpret_cast<uint32_t *>(Offsets::VAR_AUCTION_NEXT_ALLOWED_MS) = 0;
 
-    return o_AhListResult(opcode, packet);
+    return o_AhListResult(param, opcode, time, msg);
 }
 
 // ---------------------------------------------------------------------------
